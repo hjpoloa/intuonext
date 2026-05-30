@@ -236,7 +236,7 @@
 
   <!-- CHAT -->
   <div id="chatpanel">
-    <div class="panel-title">Chat with Claude Code</div>
+    <div class="panel-title">Chat with Claude Code<button onclick="newChat()" title="Start a fresh conversation (clears Claude Code's memory of this session)">+ New</button></div>
     <div id="chat-messages"></div>
     <div id="chat-typing">
       <div class="dot-anim"><span></span><span></span><span></span></div>
@@ -415,6 +415,19 @@ async function killProcess() {
     currentJobId = null;
   }
   setBusy(false);
+}
+
+async function newChat() {
+  if (!serverUrl || busy) return;
+  try {
+    await fetch(`${serverUrl}/api/chat/new`, {
+      method: "POST",
+      headers: { "x-secret": secret },
+    });
+  } catch {}
+  currentJobId = null;
+  document.getElementById("chat-messages").innerHTML = "";
+  appendTerminal("\n— New conversation started (previous session forgotten) —\n");
 }
 
 function setBusy(state) {
