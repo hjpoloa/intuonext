@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <title>Intuonext</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
 <style>
@@ -19,6 +19,7 @@
     --success:  #38c97a;
     --error:    #ff4d6a;
     --header-h: 54px;
+    --app-h: 100dvh;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -47,7 +48,7 @@
   .login-error { color: var(--error); font-size: 11px; margin-top: 8px; display: none; }
 
   /* ── MAIN LAYOUT — DESKTOP ── */
-  #main { display: grid; grid-template-columns: 240px 1fr 320px; grid-template-rows: calc(100vh - var(--header-h)); height: calc(100vh - var(--header-h)); }
+  #main { display: grid; grid-template-columns: 240px 1fr 320px; grid-template-rows: calc(var(--app-h) - var(--header-h)); height: calc(var(--app-h) - var(--header-h)); }
 
   /* ── FILE BROWSER ── */
   #filebrowser { border-right: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; overflow: hidden; }
@@ -120,18 +121,19 @@
 
   /* ── MOBILE ── */
   @media (max-width: 700px) {
-    #main { grid-template-columns: 1fr; grid-template-rows: calc(100vh - var(--header-h)); }
+    html, body { overflow: visible; }
+    #main { grid-template-columns: 1fr; grid-template-rows: calc(var(--app-h) - var(--header-h)); overflow: hidden; }
 
     /* File browser and terminal become drawers */
     #filebrowser {
-      position: fixed; top: 0; left: -85vw; width: 85vw; height: 100vh;
+      position: fixed; top: 0; left: -85vw; width: 85vw; height: var(--app-h);
       z-index: 99; transition: left 0.28s cubic-bezier(0.4,0,0.2,1);
       border-right: 1px solid var(--border);
     }
     #filebrowser.drawer-open { left: 0; }
 
     #terminal-panel {
-      position: fixed; top: 0; right: -85vw; width: 85vw; height: 100vh;
+      position: fixed; top: 0; right: -85vw; width: 85vw; height: var(--app-h);
       z-index: 99; transition: right 0.28s cubic-bezier(0.4,0,0.2,1);
       border-left: 1px solid var(--border);
     }
@@ -140,19 +142,24 @@
     /* Chat takes full width */
     #chatpanel { grid-column: 1; }
 
-    /* FAB buttons — sit above the input bar, small + dimmed until tapped */
+    /* FAB buttons — inline inside input bar, dimmed until tapped */
     #fab-files, #fab-terminal {
       display: flex; align-items: center; justify-content: center;
-      position: fixed; width: 34px; height: 34px;
+      width: 36px; height: 36px; flex-shrink: 0;
       border-radius: 50%; border: none; cursor: pointer;
-      font-size: 14px; z-index: 100;
-      opacity: 0.35;
-      transition: opacity 0.2s, transform 0.15s;
-      box-shadow: none;
+      font-size: 15px; z-index: 100;
+      opacity: 0.4;
+      transition: opacity 0.2s, transform 0.1s;
+      position: static;
     }
-    #fab-files:active, #fab-terminal:active { opacity: 1; transform: scale(1.1); }
-    #fab-files { left: 10px; background: var(--accent2); color: #fff; }
-    #fab-terminal { right: 10px; background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+    #fab-files:active, #fab-terminal:active { opacity: 1; transform: scale(1.12); }
+    #fab-files { background: var(--accent2); color: #fff; }
+    #fab-terminal { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+
+    /* Input row on mobile: FABs flank the textarea */
+    #chat-input-row {
+      padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    }
 
     /* Drawer close buttons */
     .drawer-close { display: flex !important; }
@@ -235,9 +242,11 @@
       Claude Code is working...
     </div>
     <div id="chat-input-row">
+      <button id="fab-files" onclick="openDrawer('files')" title="Files">📁</button>
       <textarea id="chat-input" placeholder="Ask Claude Code anything…"></textarea>
       <button id="kill-btn" onclick="killProcess()">■ Stop</button>
       <button id="send-btn" onclick="sendChat()">➤</button>
+      <button id="fab-terminal" onclick="openDrawer('terminal')" title="Terminal">⌨</button>
     </div>
   </div>
 
@@ -256,9 +265,6 @@
 
 </div>
 
-<!-- MOBILE FAB BUTTONS -->
-<button id="fab-files" onclick="openDrawer('files')" title="Files">📁</button>
-<button id="fab-terminal" onclick="openDrawer('terminal')" title="Terminal">⌨</button>
 
 <div id="toast"></div>
 
@@ -272,38 +278,17 @@ let busy = false;
 
 document.getElementById("server-url").value = serverUrl;
 
-// ── FAB POSITIONING ───────────────────────────────────────────────────────────
-function positionFABs() {
-  if (window.innerWidth > 700) return;
-  const inputRow = document.getElementById("chat-input-row");
-  const rect = inputRow.getBoundingClientRect();
-  const top = rect.top - 44; // 34px button + 10px gap
-  document.getElementById("fab-files").style.top = top + "px";
-  document.getElementById("fab-terminal").style.top = top + "px";
-}
-window.addEventListener("resize", positionFABs);
-window.addEventListener("load", positionFABs);
-// Re-position after fonts/layout settle
-setTimeout(positionFABs, 300);
-
 // ── DRAWERS ───────────────────────────────────────────────────────────────────
 function openDrawer(which) {
   closeDrawers();
   if (which === 'files') document.getElementById("filebrowser").classList.add("drawer-open");
   if (which === 'terminal') document.getElementById("terminal-panel").classList.add("drawer-open");
   document.getElementById("drawer-overlay").classList.add("show");
-  document.getElementById("fab-files").style.display = "none";
-  document.getElementById("fab-terminal").style.display = "none";
 }
 function closeDrawers() {
   document.getElementById("filebrowser").classList.remove("drawer-open");
   document.getElementById("terminal-panel").classList.remove("drawer-open");
   document.getElementById("drawer-overlay").classList.remove("show");
-  if (window.innerWidth <= 700) {
-    document.getElementById("fab-files").style.display = "flex";
-    document.getElementById("fab-terminal").style.display = "flex";
-    positionFABs();
-  }
 }
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
