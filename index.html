@@ -321,8 +321,13 @@ function initWS() {
   if (ws) { ws.close(); ws = null; }
   const wsUrl = serverUrl.replace(/^http/, "ws") + `?secret=${secret}`;
   ws = new WebSocket(wsUrl);
-  ws.onopen = () => setStatus("connected", "Connected");
-  ws.onclose = () => { setStatus("error", "Disconnected"); setTimeout(initWS, 5000); };
+  ws.onopen = () => {
+    setStatus("connected", "Connected");
+    ws._ping = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));
+    }, 25000);
+  };
+  ws.onclose = () => { clearInterval(ws._ping); setStatus("error", "Disconnected"); setTimeout(initWS, 5000); };
   ws.onerror = () => setStatus("error", "Error");
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
