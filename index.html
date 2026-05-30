@@ -107,7 +107,7 @@
   #drawer-overlay.show { display: block; }
 
   /* ── MOBILE FAB BUTTONS ── */
-  #fab-files, #fab-terminal { display: none; }
+  #fab-files, #fab-terminal { display: none; z-index: 100; }
 
   /* ── SCROLLBARS ── */
   ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -120,7 +120,8 @@
 
   /* ── MOBILE ── */
   @media (max-width: 700px) {
-    #main { grid-template-columns: 1fr; grid-template-rows: calc(100vh - var(--header-h)); }
+    html, body { overflow: visible; }
+    #main { grid-template-columns: 1fr; grid-template-rows: calc(100vh - var(--header-h)); overflow: hidden; }
 
     /* File browser and terminal become drawers */
     #filebrowser {
@@ -145,7 +146,7 @@
       display: flex; align-items: center; justify-content: center;
       position: fixed; bottom: 24px; width: 48px; height: 48px;
       border-radius: 50%; border: none; cursor: pointer;
-      font-size: 18px; z-index: 97; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      font-size: 18px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
       transition: opacity 0.2s;
     }
     #fab-files { left: 20px; background: var(--accent2); color: #fff; }
@@ -275,11 +276,18 @@ function openDrawer(which) {
   if (which === 'files') document.getElementById("filebrowser").classList.add("drawer-open");
   if (which === 'terminal') document.getElementById("terminal-panel").classList.add("drawer-open");
   document.getElementById("drawer-overlay").classList.add("show");
+  document.getElementById("fab-files").style.display = "none";
+  document.getElementById("fab-terminal").style.display = "none";
 }
 function closeDrawers() {
   document.getElementById("filebrowser").classList.remove("drawer-open");
   document.getElementById("terminal-panel").classList.remove("drawer-open");
   document.getElementById("drawer-overlay").classList.remove("show");
+  // Restore FABs only on mobile
+  if (window.innerWidth <= 700) {
+    document.getElementById("fab-files").style.display = "flex";
+    document.getElementById("fab-terminal").style.display = "flex";
+  }
 }
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
