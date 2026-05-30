@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Intuonext</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
 <style>
@@ -19,11 +19,10 @@
     --success:  #38c97a;
     --error:    #ff4d6a;
     --header-h: 54px;
-    --app-h: 100dvh;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; min-height: var(--app-h); background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 13px; overflow: hidden; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 13px; overflow: hidden; }
 
   /* ── HEADER ── */
   #header { height: var(--header-h); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--panel); }
@@ -48,7 +47,7 @@
   .login-error { color: var(--error); font-size: 11px; margin-top: 8px; display: none; }
 
   /* ── MAIN LAYOUT — DESKTOP ── */
-  #main { display: grid; grid-template-columns: 240px 1fr 320px; grid-template-rows: calc(var(--app-h) - var(--header-h)); height: calc(var(--app-h) - var(--header-h)); }
+  #main { display: grid; grid-template-columns: 240px 1fr 320px; grid-template-rows: calc(100vh - var(--header-h)); height: calc(100vh - var(--header-h)); }
 
   /* ── FILE BROWSER ── */
   #filebrowser { border-right: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; overflow: hidden; }
@@ -121,18 +120,18 @@
 
   /* ── MOBILE ── */
   @media (max-width: 700px) {
-    #main { grid-template-columns: 1fr; grid-template-rows: calc(var(--app-h) - var(--header-h)); }
+    #main { grid-template-columns: 1fr; grid-template-rows: calc(100vh - var(--header-h)); }
 
     /* File browser and terminal become drawers */
     #filebrowser {
-      position: fixed; top: 0; left: -85vw; width: 85vw; height: var(--app-h);
+      position: fixed; top: 0; left: -85vw; width: 85vw; height: 100vh;
       z-index: 99; transition: left 0.28s cubic-bezier(0.4,0,0.2,1);
       border-right: 1px solid var(--border);
     }
     #filebrowser.drawer-open { left: 0; }
 
     #terminal-panel {
-      position: fixed; top: 0; right: -85vw; width: 85vw; height: var(--app-h);
+      position: fixed; top: 0; right: -85vw; width: 85vw; height: 100vh;
       z-index: 99; transition: right 0.28s cubic-bezier(0.4,0,0.2,1);
       border-left: 1px solid var(--border);
     }
@@ -141,20 +140,19 @@
     /* Chat takes full width */
     #chatpanel { grid-column: 1; }
 
-    /* FAB buttons */
+    /* FAB buttons — sit above the input bar, small + dimmed until tapped */
     #fab-files, #fab-terminal {
       display: flex; align-items: center; justify-content: center;
-      position: fixed; bottom: 24px; width: 48px; height: 48px;
+      position: fixed; width: 34px; height: 34px;
       border-radius: 50%; border: none; cursor: pointer;
-      font-size: 18px; z-index: 97; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-      transition: opacity 0.2s;
+      font-size: 14px; z-index: 100;
+      opacity: 0.35;
+      transition: opacity 0.2s, transform 0.15s;
+      box-shadow: none;
     }
-    #fab-files { left: 20px; background: var(--accent2); color: #fff; }
-    #fab-terminal { right: 20px; background: var(--panel); color: var(--text); border: 1px solid var(--border); }
-
-    /* Push FABs and input above system gesture/nav bar */
-    #fab-files, #fab-terminal { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
-    #chat-input-row { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+    #fab-files:active, #fab-terminal:active { opacity: 1; transform: scale(1.1); }
+    #fab-files { left: 10px; background: var(--accent2); color: #fff; }
+    #fab-terminal { right: 10px; background: var(--panel); color: var(--text); border: 1px solid var(--border); }
 
     /* Drawer close buttons */
     .drawer-close { display: flex !important; }
@@ -274,17 +272,38 @@ let busy = false;
 
 document.getElementById("server-url").value = serverUrl;
 
+// ── FAB POSITIONING ───────────────────────────────────────────────────────────
+function positionFABs() {
+  if (window.innerWidth > 700) return;
+  const inputRow = document.getElementById("chat-input-row");
+  const rect = inputRow.getBoundingClientRect();
+  const top = rect.top - 44; // 34px button + 10px gap
+  document.getElementById("fab-files").style.top = top + "px";
+  document.getElementById("fab-terminal").style.top = top + "px";
+}
+window.addEventListener("resize", positionFABs);
+window.addEventListener("load", positionFABs);
+// Re-position after fonts/layout settle
+setTimeout(positionFABs, 300);
+
 // ── DRAWERS ───────────────────────────────────────────────────────────────────
 function openDrawer(which) {
   closeDrawers();
   if (which === 'files') document.getElementById("filebrowser").classList.add("drawer-open");
   if (which === 'terminal') document.getElementById("terminal-panel").classList.add("drawer-open");
   document.getElementById("drawer-overlay").classList.add("show");
+  document.getElementById("fab-files").style.display = "none";
+  document.getElementById("fab-terminal").style.display = "none";
 }
 function closeDrawers() {
   document.getElementById("filebrowser").classList.remove("drawer-open");
   document.getElementById("terminal-panel").classList.remove("drawer-open");
   document.getElementById("drawer-overlay").classList.remove("show");
+  if (window.innerWidth <= 700) {
+    document.getElementById("fab-files").style.display = "flex";
+    document.getElementById("fab-terminal").style.display = "flex";
+    positionFABs();
+  }
 }
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
