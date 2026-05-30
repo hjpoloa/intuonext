@@ -272,10 +272,12 @@
 <script>
 let serverUrl = localStorage.getItem("cc_url") || "";
 let secret    = localStorage.getItem("cc_secret") || "";
-let ws        = null;
 let currentPath = "";
 let editingPath = "";
 let busy = false;
+let currentJobId = null;
+let lastTermLen = 0;
+let healthTimer = null;
 
 document.getElementById("server-url").value = serverUrl;
 
@@ -300,42 +302,38 @@ async function doConnect() {
   const sec = document.getElementById("secret-input").value.trim();
   if (!url || !sec) return;
   try {
-    const r = await fetch(`${url}/api/files?path=&secret=${sec}`);
+    const r = await fetch(`${url}/api/health?secret=${sec}`);
     if (!r.ok) throw new Error("bad");
     serverUrl = url; secret = sec;
     localStorage.setItem("cc_url", url);
     localStorage.setItem("cc_secret", sec);
     document.getElementById("login-overlay").style.display = "none";
     document.getElementById("login-error").style.display = "none";
-    initWS(); loadFiles("");
+    startSession();
   } catch { document.getElementById("login-error").style.display = "block"; }
 }
 
 if (serverUrl && secret) {
   document.getElementById("login-overlay").style.display = "none";
-  initWS(); loadFiles("");
+  startSession();
 }
 
-// ── WEBSOCKET ─────────────────────────────────────────────────────────────────
-function initWS() {
-  if (ws) { ws.close(); ws = null; }
-  const wsUrl = serverUrl.replace(/^http/, "ws") + `?secret=${secret}`;
-  ws = new WebSocket(wsUrl);
-  ws.onopen = () => {
-    setStatus("connected", "Connected");
-    ws._ping = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));
-    }, 25000);
-  };
-  ws.onclose = () => { clearInterval(ws._ping); setStatus("error", "Disconnected"); setTimeout(initWS, 5000); };
-  ws.onerror = () => setStatus("error", "Error");
-  ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    if (msg.type === "terminal") appendTerminal(msg.data);
-    if (msg.type === "chat")     appendAssistant(msg.data);
-    if (msg.type === "error")    appendAssistant("⚠ Error: " + msg.data);
-    if (msg.type === "chat" || msg.type === "error") setBusy(false);
-  };
+// ── SESSION / HEALTH ────────────────────────────────────────────────────────
+function startSession() {
+  setStatus("connected", "Connected");
+  appendTerminal(`Connected — workspace ready.\n`);
+  loadFiles("");
+  checkHealth();
+  if (healthTimer) clearInterval(healthTimer);
+  healthTimer = setInterval(checkHealth, 20000);
+}
+
+async function checkHealth() {
+  if (!serverUrl) return;
+  try {
+    const r = await fetch(`${serverUrl}/api/health?secret=${secret}`);
+    setStatus(r.ok ? "connected" : "error", r.ok ? "Connected" : "Error");
+  } catch { setStatus("error", "Offline"); }
 }
 
 function setStatus(cls, label) {
@@ -345,7 +343,8 @@ function setStatus(cls, label) {
 }
 
 function doDisconnect() {
-  if (ws) { ws.onclose = null; ws.close(); ws = null; }
+  if (healthTimer) { clearInterval(healthTimer); healthTimer = null; }
+  currentJobId = null;
   localStorage.removeItem("cc_url"); localStorage.removeItem("cc_secret");
   serverUrl = ""; secret = "";
   setStatus("error", "Disconnected");
@@ -354,17 +353,69 @@ function doDisconnect() {
   document.getElementById("login-overlay").style.display = "flex";
 }
 
-// ── CHAT ──────────────────────────────────────────────────────────────────────
-function sendChat() {
+// ── CHAT — start job, then poll ─────────────────────────────────────────────
+async function sendChat() {
   const input = document.getElementById("chat-input");
   const text = input.value.trim();
-  if (!text || !ws || busy) return;
+  if (!text || !serverUrl || busy) return;
   input.value = ""; input.style.height = "40px";
   appendUser(text); setBusy(true);
-  ws.send(JSON.stringify({ type: "chat", text }));
+  lastTermLen = 0;
+  appendTerminal(`\n▶ Sending to Claude Code...\n`);
+  try {
+    const r = await fetch(`${serverUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-secret": secret },
+      body: JSON.stringify({ text }),
+    });
+    const data = await r.json();
+    if (!data.jobId) throw new Error(data.error || "no job");
+    currentJobId = data.jobId;
+    pollJob(data.jobId);
+  } catch (e) {
+    appendAssistant("⚠ Could not reach the server. Check the tunnel and reconnect.");
+    setBusy(false);
+  }
 }
 
-function killProcess() { if (ws) ws.send(JSON.stringify({ type: "kill" })); setBusy(false); }
+async function pollJob(jobId) {
+  if (jobId !== currentJobId) return; // superseded
+  try {
+    const r = await fetch(`${serverUrl}/api/chat/poll?jobId=${jobId}&secret=${secret}`);
+    if (!r.ok) throw new Error("poll failed");
+    const data = await r.json();
+    // stream new terminal output
+    if (data.terminal && data.terminal.length > lastTermLen) {
+      appendTerminal(data.terminal.slice(lastTermLen));
+      lastTermLen = data.terminal.length;
+    }
+    if (data.done) {
+      if (data.error) appendAssistant("⚠ Error: " + data.error);
+      else appendAssistant((data.output || "").trim() || "(no output)");
+      setBusy(false);
+      currentJobId = null;
+    } else {
+      setTimeout(() => pollJob(jobId), 1500);
+    }
+  } catch {
+    // transient hiccup — keep trying, the job keeps running server-side
+    setTimeout(() => pollJob(jobId), 2500);
+  }
+}
+
+async function killProcess() {
+  if (currentJobId) {
+    try {
+      await fetch(`${serverUrl}/api/chat/kill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-secret": secret },
+        body: JSON.stringify({ jobId: currentJobId }),
+      });
+    } catch {}
+    currentJobId = null;
+  }
+  setBusy(false);
+}
 
 function setBusy(state) {
   busy = state;
